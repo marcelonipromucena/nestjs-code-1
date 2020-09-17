@@ -3,11 +3,16 @@ import { TasksService } from './tasks.service';
 import { TaskRepository } from './task.repository';
 import { TaskStatus } from './task-status.enum';
 import { GetTasksFilterDto } from './dto/get-tasks-filter.dto';
+import { NotFoundException } from '@nestjs/common';
 
-const mockUser = { username: 'Test user' };
+const mockUser = { id: 1, username: 'Test user' };
 
 const mockTaskRepository = () => ({
   getTasks: jest.fn(),
+  findOne: jest.fn(),
+  createTask: jest.fn(),
+  delete: jest.fn(),
+  updateTaskStatus: jest.fn(),
 });
 
 describe('TaskService', () => {
@@ -27,7 +32,9 @@ describe('TaskService', () => {
   });
 
   describe('getTasks', () => {
-    it('should get all tasks from the repository', () => {
+    it('should get all tasks from the repository', async () => {
+      taskRepository.getTasks.mockResolvedValue('someValue');
+
       expect(taskRepository.getTasks).not.toHaveBeenCalled();
 
       const filters: GetTasksFilterDto = {
@@ -35,9 +42,111 @@ describe('TaskService', () => {
         search: 'Some search query',
       };
 
-      tasksService.getTasks(filters, mockUser);
+      const result = await tasksService.getTasks(filters, mockUser);
 
       expect(taskRepository.getTasks).toHaveBeenCalled();
+      expect(result).toEqual('someValue');
+    });
+  });
+
+  describe('getTaskById', () => {
+    it('should call taskRepository.findOne() and successfully retrieve and return the task', async () => {
+      const mockTask = {
+        title: 'Test task',
+        description: 'Test desc',
+      };
+
+      taskRepository.findOne.mockResolvedValue(mockTask);
+
+      const result = await tasksService.getTaskById(1, mockUser);
+
+      expect(result).toEqual(mockTask);
+
+      expect(taskRepository.findOne).toHaveBeenCalledWith({
+        where: {
+          id: 1,
+          userId: mockUser.id,
+        },
+      });
+    });
+
+    it('throws an error as task is not found', () => {
+      taskRepository.findOne.mockResolvedValue(null);
+
+      expect(tasksService.getTaskById(1, mockUser)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('createTask', () => {
+    it('should create a task', async () => {
+      const mockTask = {
+        title: 'Test task',
+        description: 'Test desc',
+      };
+
+      taskRepository.createTask.mockResolvedValue('someTask');
+
+      expect(taskRepository.createTask).not.toHaveBeenCalled();
+
+      const result = await tasksService.createTask(mockTask, mockUser);
+
+      expect(taskRepository.createTask).toHaveBeenCalledWith(
+        mockTask,
+        mockUser,
+      );
+
+      expect(result).toEqual('someTask');
+    });
+  });
+
+  describe('deleteTask', () => {
+    it('calls taskRepository.deleteTask to delete a task', async () => {
+      taskRepository.delete.mockResolvedValue({ affected: 1 });
+
+      expect(taskRepository.delete).not.toHaveBeenCalled();
+
+      await tasksService.deleteTask(1, mockUser);
+
+      expect(taskRepository.delete).toHaveBeenCalledWith({
+        id: 1,
+        userId: mockUser.id,
+      });
+    });
+
+    it('throws an error as task could not be found', () => {
+      taskRepository.delete.mockResolvedValue({ affected: 0 });
+
+      expect(tasksService.deleteTask(1, mockUser)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('updateTaskStatus', () => {
+    it('should update a tasks status', async () => {
+      const save = jest.fn().mockResolvedValue(true);
+      tasksService.getTaskById = jest.fn().mockResolvedValue({
+        status: TaskStatus.IN_PROGRESS,
+        save,
+      });
+
+      expect(tasksService.getTaskById).not.toHaveBeenCalled();
+
+      expect(save).not.toHaveBeenCalled();
+
+      const result = await tasksService.updateTaskStatus(
+        1,
+        TaskStatus.IN_PROGRESS,
+        mockUser,
+      );
+
+      expect(tasksService.getTaskById).toHaveBeenCalled();
+
+      expect(save).toHaveBeenCalled();
+
+      expect(result.status).toEqual(TaskStatus.IN_PROGRESS);
     });
   });
 });
